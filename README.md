@@ -1,6 +1,8 @@
 # CODI
 
-This is the official implementation of the paper: [CODI: Compressing Chain-of-Thought into Continuous Space via Self-Distillation](https://arxiv.org/abs/2502.21074)
+This is the official implementation of the paper: [CODI: Compressing Chain-of-Thought into Continuous Space via Self-Distillation](https://arxiv.org/abs/2502.21074).
+Accepted by EMNLP 2025 🎉
+
 
 ![codi](imgs/codi_method_v4.png)
 
