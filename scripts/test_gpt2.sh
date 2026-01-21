@@ -17,4 +17,7 @@ python test.py \
 	--inf_num_iterations 1 \
 	--remove_eos True \
 	--use_lora True \
+	--use_logit_lens True \
+	--logit_lens_example_idx 0 \
 	--ckpt_dir ~/transfer/codi_gpt2
+

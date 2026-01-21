@@ -226,18 +226,7 @@ def evaluation(model_args, data_args, training_args):
                 outputs = model.codi(inputs_embeds=latent_embd, use_cache=True, output_hidden_states=True, past_key_values=past_key_values)
                 past_key_values = outputs.past_key_values
                 latent_embd = outputs.hidden_states[-1][:, -1, :].unsqueeze(1)
-
-                if i == 1: 
-                    print(f">>> INFERENCE ABLATION STEP {i} <<<", flush=True) 
-                    print("latent norm before:", latent_embd.norm().item(), flush=True) 
-                    #zero
-                    latent_embd = torch.zeros_like(latent_embd)
-                    #mean 
-                    #latent_mean = latent_embd.mean(dim=0, keepdim=True)  # [1, 1, D]
-                    #latent_embd = latent_mean.expand_as(latent_embd)
-                    print("latent norm after:", latent_embd.norm().item(), flush=True)
-
-
+                
                 if training_args.use_prj:
                     latent_embd = model.prj(latent_embd)
 
@@ -309,14 +298,14 @@ def evaluation(model_args, data_args, training_args):
             for mini_step, pred_token in enumerate(pred_tokens):
                 len_cot.append(len(pred_token))
                 decoded_pred = tokenizer.decode(pred_token, skip_special_tokens=True)
-            #     # Extract the numbers in sentences 
-            #     if do_print:
-            #         print(f"Question {step*data_args.batch_size+mini_step} Starts...")
-            #         print(f"Q: {question[step*data_args.batch_size+mini_step]}")
-            #         print(decoded_pred)
-            #         print(f"Question {step*data_args.batch_size+mini_step} Ends")
-            #         print(f"Prediction={extract_answer_number(decoded_pred)}; Groundtruth={answer[step*data_args.batch_size+mini_step]}")
-            #         print("")
+                # Extract the numbers in sentences 
+                if do_print:
+                    print(f"Question {step*data_args.batch_size+mini_step} Starts...")
+                    print(f"Q: {question[step*data_args.batch_size+mini_step]}")
+                    print(decoded_pred)
+                    print(f"Question {step*data_args.batch_size+mini_step} Ends")
+                    print(f"Prediction={extract_answer_number(decoded_pred)}; Groundtruth={answer[step*data_args.batch_size+mini_step]}")
+                    print("")
                 ans_pred_list.append(extract_answer_number(decoded_pred))
       
     accuracy = compute_accuracy(answer, ans_pred_list)

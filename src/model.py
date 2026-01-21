@@ -115,6 +115,8 @@ class TrainingArguments(transformers.TrainingArguments):
     log_full: bool = field(default=False, metadata={"help": "Log all losses."})
     print_loss: bool = field(default=True)
     max_token_num: int = field(default=1000, metadata={"help": "Limit the longest data to avoid OOM."})
+    use_logit_lens: bool = field(default=False, metadata={"help": "Apply logit lens to inspect hidden states at different layers."})
+    logit_lens_example_idx: int = field(default=0, metadata={"help": "Which example index to show logit lens for (0-indexed)."})
 
 def print_trainable_parameters(model):
     trainable_parameters = 0
@@ -180,7 +182,7 @@ class CODI(torch.nn.Module):
 
         self.dim = self.codi.config.hidden_size
         self.num_latent = training_args.num_latent
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
 
         # LoRA
         if training_args.use_lora:

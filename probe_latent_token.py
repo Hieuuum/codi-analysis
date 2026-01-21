@@ -87,7 +87,7 @@ def evaluation(model_args, data_args, training_args):
         token=model_args.token,
         model_max_length=training_args.model_max_length,
         padding_side="left",
-        use_fast=False,
+        use_fast=True,
     )
 
     if tokenizer.pad_token_id is None:

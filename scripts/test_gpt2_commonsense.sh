@@ -1,0 +1,22 @@
+python test.py \
+    --data_name "commonsense" \
+    --output_dir "$SAVE_DIR" \
+    --model_name_or_path gpt2 \
+    --seed 11 \
+    --model_max_length 512 \
+    --bf16 \
+    --lora_r 128 --lora_alpha 32 --lora_init \
+    --batch_size 128 \
+    --greedy True \
+    --num_latent 6 \
+    --use_prj True \
+    --prj_dim 768 \
+    --prj_no_ln False \
+    --prj_dropout 0.0 \
+    --inf_latent_iterations 6 \
+    --inf_num_iterations 1 \
+    --remove_eos True \
+    --use_lora True \
+    --use_logit_lens True \
+    --logit_lens_example_idx 0 \
+    --ckpt_dir ~/ColeBlondinGroup/codi/gsm8k_llama1b_latent_baseline/gpt2/ep_50/lr_0.003/seed_11

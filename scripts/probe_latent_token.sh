@@ -17,4 +17,4 @@ python probe_latent_token.py \
 	--inf_num_iterations 1 \
 	--remove_eos True \
 	--use_lora True\
-	--ckpt_dir /scratch/prj/inf_multimodal_qa/scratch_tmp/efficient_cot/icae/think_in_the_latent_2025/exp_icot_gpt2+mse+ce+prj768+div+lat6+lr3e-3+noref_nopre_reproduce/gsm8k_llama1b_latent_baseline/gpt2/ep_42/lr_0.003/seed_11/
+	--ckpt_dir ~/transfer/codi_gpt2
