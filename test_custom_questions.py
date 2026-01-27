@@ -39,18 +39,26 @@ from src.model import (
     TrainingArguments,
 )
 
-@dataclass
-class CustomQAArguments:
-    input_file: str = field(metadata={"help": "Path to JSON file like {'questions': [...]} or a list of strings"})
-    output_file: Optional[str] = field(default=None, metadata={"help": "Optional path to save outputs as JSON"})
+def load_custom_questions():
+    # Keep these as plain strings (same format as the dataset questions)
+    questions = [
+        "What is 12 times 50?",
+        "Who is the current Prime Minister of Canada?",
+        "Can you eat breakfast after lunch?",
+        "What color is a mirror?",
+        "Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+        "What is 2+2?"
+    ]
 
+    answers = [float('inf'),float('inf'),float('inf'),float('inf'),float('inf'),float('inf')]
+    return questions, answers
 
 do_print = True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 
-def evaluation(model_args, data_args, training_args, custom_args):
+def evaluation(model_args, data_args, training_args):
     if model_args.lora_init:
         task_type = TaskType.CAUSAL_LM
         if any(name in model_args.model_name_or_path.lower() for name in ["llama", "mistral", "falcon", "qwen"]):
@@ -106,22 +114,11 @@ def evaluation(model_args, data_args, training_args, custom_args):
     model.to(torch.bfloat16)
 
     ######################
-    #   custom questions #
+    #      dataset       #
     ######################
-    logging.warning("Loading custom questions from JSON")
+    logging.warning("Loading custom questions")
 
-    with open(custom_args.input_file, "r", encoding="utf-8") as f:
-        obj = json.load(f)
-
-    if isinstance(obj, dict) and "questions" in obj:
-        question = [str(q).strip() for q in obj["questions"]]
-    elif isinstance(obj, list):
-        # allow list of strings
-        question = [str(q).strip() for q in obj]
-    else:
-        raise ValueError("Unsupported JSON format. Use {'questions': [...]} or a list of strings.")
-
-    logging.warning(f"Loaded {len(question)} questions")
+    question, answer = load_custom_questions()
 
     logging.warning("Tokenizing inputs...")
     eval_step = math.ceil(len(question)/data_args.batch_size)
@@ -223,6 +220,7 @@ def evaluation(model_args, data_args, training_args, custom_args):
                 # implement the sampling process
                 if training_args.greedy:
                     next_token_ids = torch.argmax(logits, dim=-1).squeeze(-1)
+                    next_token_ids = next_token_ids.view(-1)
                 else:
                     logits /= gen_kwargs["temperature"]
                     if gen_kwargs["top_k"] > 1:
@@ -244,6 +242,8 @@ def evaluation(model_args, data_args, training_args, custom_args):
                     
                     probs = F.softmax(logits, dim=-1)
                     next_token_ids = torch.multinomial(probs, num_samples=1).squeeze(-1)
+                    next_token_ids = next_token_ids.view(-1)
+
 
                 # Handle EOS for each sequence
                 for b in range(batch_size):
@@ -264,18 +264,20 @@ def evaluation(model_args, data_args, training_args, custom_args):
                 decoded_pred = tokenizer.decode(pred_token, skip_special_tokens=True)
                 # Extract the numbers in sentences 
                 if do_print:
+                    print(f"Question {step*data_args.batch_size+mini_step} Starts...")
                     print(f"Q: {question[step*data_args.batch_size+mini_step]}")
-                    print(f"A: {decoded_pred.strip()}")
+                    print(decoded_pred)
+                    print(f"Question {step*data_args.batch_size+mini_step} Ends")
+                    print(f"Prediction={extract_answer_number(decoded_pred)}; Groundtruth={answer[step*data_args.batch_size+mini_step]}")
                     print("")
-                ans_pred_list.append(decoded_pred.strip())
+                ans_pred_list.append(extract_answer_number(decoded_pred))
       
-    results = [{"question": q, "answer": a} for q, a in zip(question, ans_pred_list)]
+    # accuracy = compute_accuracy(answer, ans_pred_list)
 
-    if custom_args.output_file:
-        with open(custom_args.output_file, "w", encoding="utf-8") as f:
-            json.dump({"results": results}, f, indent=2)
+    # print(f"adapter: {model_args.adapter_name_or_path} | GSM8K test accuracy: {100*accuracy:.2f}% | ")
+    # print(f"average length of COT: {sum(len_cot)/len(len_cot)}")
 
-    return results
+    # return 100*accuracy
 
 def extract_answer_number(sentence: str) -> float:
     sentence = sentence.replace(',', '')
@@ -303,7 +305,7 @@ def extract_answer_number(sentence: str) -> float:
 
 def compute_accuracy(gold: list, pred: list):
     acc = 0.0
-    for p, g in zip(pred, gold):
+    for g, p in zip(gold, pred):
         if isinstance(p, list):
             if g in p:
                 acc += 1
@@ -315,7 +317,12 @@ def compute_accuracy(gold: list, pred: list):
 
 
 if __name__ == "__main__":
-    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, CustomQAArguments))
-    model_args, data_args, training_args, custom_args = parser.parse_args_into_dataclasses()
+    global data_args
+    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    evaluation(model_args, data_args, training_args, custom_args)
+    accu_list = []
+    for i in range(training_args.inf_num_iterations):
+        accu = evaluation(model_args, data_args, training_args)
+        accu_list.append(accu)
+    # print(f"Average accuracy over {training_args.inf_num_iterations} sampling: {sum(accu_list)/len(accu_list)}")

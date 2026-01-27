@@ -1,11 +1,10 @@
 {
   "questions": [
-    "<What color is the sky>bot",
-    "What is the capital of the France",
-    "Who is the current Prime Minister Of Canada",
-    "Can you eat breakfast after lunch?",
-    "What color is a mirror?",
-    "Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
-    "what is 2+2?"
+    "<What is the capital of France>bot",
+    "<Who is the current Prime Minister of Canada>bot",
+    "<Can you eat breakfast after lunch>bot",
+    "<What color is a mirror>bot",
+    "<Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market>bot",
+    "<What is 2+2>bot"
   ]
 }
