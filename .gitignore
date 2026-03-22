@@ -1,6 +1,8 @@
 *.bin
 gsm8k_llama1b_latent_baseline/
 claude.md
+.claude/
 transfer
 colab_experiment.ipynb
 outputs/*
+__pycache__/
