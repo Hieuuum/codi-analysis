@@ -42,6 +42,7 @@ from src.model import (
 # ── Module-level inference settings ──────────────────────────────────────────
 do_print = False
 do_probe = True       # set False to skip latent token probing entirely (faster inference)
+log_wrong = False     # set True to include incorrect answers in the decoded latent output file
 probe_topk = 20
 probe_idx = None
 test_attention = False
@@ -382,8 +383,9 @@ def format_batch_logs(
             print(f"Prediction={pred_answer}; Groundtruth={answers[global_idx]}")
             print("")
 
-        # do_log: reuse pred_answer already extracted above — avoids a second tokenizer.decode call
-        do_log = int(answers[global_idx]) == int(pred_answer)
+        # do_log: log this example if it was correct, or if log_wrong is enabled
+        correct = int(answers[global_idx]) == int(pred_answer)
+        do_log = correct or log_wrong
         if do_log:
             log_lines.append(f"Question{global_idx}...")
             log_lines.append(f"{questions[global_idx]}...")
