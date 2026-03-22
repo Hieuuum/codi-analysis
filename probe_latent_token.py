@@ -41,7 +41,8 @@ from src.model import (
 
 # ── Module-level inference settings ──────────────────────────────────────────
 do_print = False
-probe_topk = 5
+do_probe = True       # set False to skip latent token probing entirely (faster inference)
+probe_topk = 20
 probe_idx = None
 test_attention = False
 
@@ -194,18 +195,19 @@ def run_batch(
     tokenizer: transformers.PreTrainedTokenizer,
     training_args: TrainingArguments,
     gen_kwargs: dict,
+    do_probe: bool,
     probe_topk: int,
     probe_idx,
 ) -> tuple:
     """Encode one batch, run latent iterations with probing, then generate answer tokens.
 
     Returns:
-        (pred_tokens, top5_values, top5_indices)
+        (pred_tokens, topk_values, topk_indices)
         pred_tokens: list[list[int]], one token-id list per sequence in the batch.
-        top5_values / top5_indices: (batch, n_probe_steps, topk) tensors.
+        topk_values / topk_indices: (batch, n_probe_steps, probe_topk) tensors, or None if do_probe=False.
     """
     batch_size = batch["input_ids"].size(0)
-    top5_values_list, top5_indices_list = [], []
+    topk_values_list, topk_indices_list = [], []
 
     # Hook captures only the last layer's output hidden state so we can set
     # output_hidden_states=False and avoid materialising every layer's activations.
@@ -228,12 +230,12 @@ def run_batch(
         past_key_values = outputs.past_key_values
         latent_embd = _captured['h'][:, -1, :].unsqueeze(1)
 
-        # probe index 0 = after initial encoding; only compute if needed
-        if probe_idx is None or probe_idx == 0:
+        # probe index 0 = after initial encoding; only compute if probing is enabled
+        if do_probe and (probe_idx is None or probe_idx == 0):
             probs = torch.nn.functional.softmax(model.codi.lm_head(latent_embd), dim=-1)
-            top5_v, top5_i = torch.topk(probs, k=probe_topk, dim=2)
-            top5_values_list.append(top5_v)
-            top5_indices_list.append(top5_i)
+            topk_v, topk_i = torch.topk(probs, k=probe_topk, dim=2)
+            topk_values_list.append(topk_v)
+            topk_indices_list.append(topk_i)
 
         if training_args.use_prj:
             latent_embd = model.prj(latent_embd)
@@ -250,11 +252,11 @@ def run_batch(
             latent_embd = _captured['h'][:, -1, :].unsqueeze(1)
 
             # probe index iter_idx+1 = after this latent pass; skip if not the target
-            if probe_idx is None or probe_idx == iter_idx + 1:
+            if do_probe and (probe_idx is None or probe_idx == iter_idx + 1):
                 probs = torch.nn.functional.softmax(model.codi.lm_head(latent_embd), dim=-1)
-                top5_v, top5_i = torch.topk(probs, k=probe_topk, dim=2)
-                top5_values_list.append(top5_v)
-                top5_indices_list.append(top5_i)
+                topk_v, topk_i = torch.topk(probs, k=probe_topk, dim=2)
+                topk_values_list.append(topk_v)
+                topk_indices_list.append(topk_i)
 
             if training_args.use_prj:
                 latent_embd = model.prj(latent_embd)
@@ -330,21 +332,24 @@ def run_batch(
     finally:
         hook.remove()
 
-    top5_values = torch.cat(top5_values_list, dim=1)
-    top5_indices = torch.cat(top5_indices_list, dim=1)
+    if not do_probe:
+        return pred_tokens, None, None
+
+    topk_values = torch.cat(topk_values_list, dim=1)
+    topk_indices = torch.cat(topk_indices_list, dim=1)
 
     if probe_idx is not None:
         # Only one probe was collected (at the target iteration), so it sits at index 0
-        top5_values = top5_values[:, 0].unsqueeze(1)
-        top5_indices = top5_indices[:, 0].unsqueeze(1)
+        topk_values = topk_values[:, 0].unsqueeze(1)
+        topk_indices = topk_indices[:, 0].unsqueeze(1)
 
-    return pred_tokens, top5_values, top5_indices
+    return pred_tokens, topk_values, topk_indices
 
 
 def format_batch_logs(
     batch_offset: int,
     pred_tokens: list,
-    top5_indices: torch.Tensor,
+    topk_indices,           # torch.Tensor | None — None when do_probe=False
     questions: list,
     answers: list,
     procedures: list,
@@ -354,14 +359,14 @@ def format_batch_logs(
     """Decode predictions, extract numeric answers, and build log lines for correct examples.
 
     Returns:
-        (ans_preds, log_lines, decoded_top5_flat)
+        (ans_preds, log_lines, decoded_topk_flat)
         ans_preds: one float/int answer per sequence.
         log_lines: log strings for correctly predicted examples only.
-        decoded_top5_flat: flat list of decoded top-5 token strings (all sequences, all steps).
+        decoded_topk_flat: flat list of decoded topk token strings; empty when do_probe=False.
     """
     ans_preds = []
     log_lines = []
-    decoded_top5_flat = []
+    decoded_topk_flat = []
 
     for ii, tokens in enumerate(pred_tokens):
         global_idx = log_count + ii
@@ -384,23 +389,24 @@ def format_batch_logs(
             log_lines.append(f"{questions[global_idx]}...")
             log_lines.append(f"CoT={procedures[global_idx]}, Answer={answers[global_idx]}")
 
-        top5_indices_decoded_tmp = []
-        for jj in range(top5_indices.size(1)):
-            if do_log:
-                if test_attention:
-                    pass  # placeholder: attn_to_lats not available in current flow
-                log_lines.append(
-                    f"decoded {jj}th latent (top5): {[tokenizer.decode(x) for x in top5_indices[ii, jj]]}"
-                )
-            for kk in range(top5_indices.size(2)):
-                top5_indices_decoded_tmp.append(tokenizer.decode(top5_indices[ii, jj, kk]))
-        decoded_top5_flat.extend(top5_indices_decoded_tmp)
+        if topk_indices is not None:
+            topk_indices_decoded_tmp = []
+            for jj in range(topk_indices.size(1)):
+                if do_log:
+                    if test_attention:
+                        pass  # placeholder: attn_to_lats not available in current flow
+                    log_lines.append(
+                        f"decoded {jj}th latent (topk): {[tokenizer.decode(x) for x in topk_indices[ii, jj]]}"
+                    )
+                for kk in range(topk_indices.size(2)):
+                    topk_indices_decoded_tmp.append(tokenizer.decode(topk_indices[ii, jj, kk]))
+            decoded_topk_flat.extend(topk_indices_decoded_tmp)
 
         if do_log:
             log_lines.append(f"Model Prediction: {tokenizer.decode(tokens)}")
             log_lines.append("\n\n")
 
-    return ans_preds, log_lines, decoded_top5_flat
+    return ans_preds, log_lines, decoded_topk_flat
 
 
 def evaluation(model_args, data_args, training_args):
@@ -430,15 +436,15 @@ def evaluation(model_args, data_args, training_args):
 
     #set_seed(42)
     for step, batch in enumerate(question_data):
-        pred_tokens, top5_values, top5_indices = run_batch(
-            batch, model, tokenizer, training_args, gen_kwargs, probe_topk, probe_idx
+        pred_tokens, topk_values, topk_indices = run_batch(
+            batch, model, tokenizer, training_args, gen_kwargs, do_probe, probe_topk, probe_idx
         )
         for tokens in pred_tokens:
             len_cot.append(len(tokens))
 
         ans_preds, log_lines, _ = format_batch_logs(
             step * data_args.batch_size,
-            pred_tokens, top5_indices,
+            pred_tokens, topk_indices,
             questions, answers, procedures,
             tokenizer, log_count,
         )
