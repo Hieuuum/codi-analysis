@@ -396,7 +396,7 @@ def format_batch_logs(
                     if test_attention:
                         pass  # placeholder: attn_to_lats not available in current flow
                     log_lines.append(
-                        f"decoded {jj}th latent (topk): {[tokenizer.decode(x) for x in topk_indices[ii, jj]]}"
+                        f"decoded {jj}th latent (top {probe_topk}): {[tokenizer.decode(x) for x in topk_indices[ii, jj]]}"
                     )
                 for kk in range(topk_indices.size(2)):
                     topk_indices_decoded_tmp.append(tokenizer.decode(topk_indices[ii, jj, kk]))
