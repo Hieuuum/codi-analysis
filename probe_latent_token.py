@@ -48,35 +48,27 @@ log_wrong = False       # include incorrectly predicted examples in the output f
 sweep_all_brackets = True # Set to True to iterate over all bracket_pairs below for parameter sweeping
 cot_brackets = ('{{', '}}')  # Standard setting: [0] replaces '<<' and [1] replaces '>>' in raw CoT
 bracket_pairs = [
-    ('{{ ', ' }}'),
-    ('[[ ', ' ]]'),
-    ('<< ', ' >>'),
-    ('(( ', ' ))'),
-    ('!! ', ' !!'),
-    ('@@ ', ' @@'),
-    ('## ', ' ##'),
-    ('$$ ', ' $$'),
-    ('%% ', ' %%'),
-    ('^^ ', ' ^^'),
-    ('&& ', ' &&'),
-    ('** ', ' **'),
-    ('-- ', ' --'),
-    ('__ ', ' __'),
-    ('== ', ' =='),
-    ('++ ', ' ++'),
-    ('\\\\ ', ' \\\\'),
-    ('|| ', ' ||'),
-    (';; ', ' ;;'),
-    (':: ', ' ::'),
-    ("'' ", " ''"),
-    ('"" ', ' ""'),
-    (',, ', ' ,,'),
-    ('.. ', ' ..'),
-    ('// ', ' //'),
-    ('?? ', ' ??'),
-    ('~~ ', ' ~~'),
-    ('`` ', ' ``'),
+    ('<<', '>>'),
+    ('"""', '"""'),
+    ('[', ']'),
+    ('[[', ']]'),
+    ('<<<', '>>>'),
+    ('{{', '}}'),
+    ('[[[', ']]]'),
+    ('``', '``'),
+    ('```', '```'),
+    ('///', '///'),
 ]
+
+sweep_all_formats = False # Set to True to iterate over all formats below
+cot_formats = [
+    "baseline",            # 2. Equations style (current baseline): <<16-3-4=9>> <<9*2=18>>
+    "cot_prefix",          # 1. COT: prefix (no brackets, comma separated): COT: 16-3-4=9, 9*2=18
+    "newline",             # 3. Newline for each CoT step: \n<<16-3-4=9>>\n<<9*2=18>>
+    "cot_prefix_brackets", # 4. COT: with brackets: COT: <<16-3-4=9>> <<9*2=18>>
+    "newline_cot_prefix",  # 5. Newline + COT: prefix: \nCOT:\n<<16-3-4=9>>\n<<9*2=18>>
+]
+default_cot_format = "baseline" # Default format to use if sweep_all_formats is False
 
 probe_topk = 10         # number of top tokens to decode at each latent probe step
 probe_idx = None        # probe only this latent iteration index (0 = after encoding); None probes all iterations
@@ -149,6 +141,7 @@ def prepare_dataset(
     tokenizer: transformers.PreTrainedTokenizer,
     current_brackets: tuple,
     test_set,
+    cot_format: str = "baseline",
 ) -> tuple:
     """Download and format the dataset, tokenize into batches ready for inference.
 
@@ -166,9 +159,29 @@ def prepare_dataset(
 
         # Split the space-separated math annotators, e.g. '<<16-3-4=9>> <<9*2=18>>'
         thoughts = raw_cot.strip().split()
-        first_n_minus_1_raw = " ".join(thoughts[:-1]) if len(thoughts) > 1 else ""
-        first_n_minus_1 = first_n_minus_1_raw.replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
-        final_question = f"{raw_q} {first_n_minus_1}" if first_n_minus_1 else raw_q
+        if len(thoughts) > 1:
+            first_n_minus_1_raw = thoughts[:-1]
+            
+            if cot_format == "baseline":
+                s = " ".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q} {s}"
+            elif cot_format == "cot_prefix":
+                s = ", ".join([t.replace('<<', '').replace('>>', '') for t in first_n_minus_1_raw])
+                final_question = f"{raw_q} COT: {s}"
+            elif cot_format == "newline":
+                s = "\n".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q}\n{s}"
+            elif cot_format == "cot_prefix_brackets":
+                s = " ".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q} COT: {s}"
+            elif cot_format == "newline_cot_prefix":
+                s = "\n".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q}\nCOT:\n{s}"
+            else:
+                s = " ".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q} {s}"
+        else:
+            final_question = raw_q
 
         questions.append(final_question)
         answers.append(float(example["answer"].replace(",", "")))
@@ -443,13 +456,15 @@ def format_batch_logs(
     return ans_preds, log_lines, decoded_topk_flat
 
 
-def evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=None):
+def evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=None, cot_format=None):
     """Orchestrate CODI evaluation: prepare data, run inference, log results."""
     if current_brackets is None:
         current_brackets = cot_brackets
+    if cot_format is None:
+        cot_format = default_cot_format
 
     question_data, questions, answers, procedures = prepare_dataset(
-        data_args, training_args, model, tokenizer, current_brackets, test_set
+        data_args, training_args, model, tokenizer, current_brackets, test_set, cot_format=cot_format
     )
 
     model.eval()
@@ -496,6 +511,7 @@ def evaluation(model_args, data_args, training_args, model, tokenizer, test_set,
         f"Total correct: {len(correct_indices)}\n"
         f"Accuracy: {accuracy * 100:.2f}%\n"        
         f"CoT brackets used: {bracket_str}\n"        
+        f"CoT format: {cot_format}\n"
         f"Correct indices: {correct_indices}\n"
         f"=====================\n\n"
     )
@@ -554,17 +570,14 @@ if __name__ == "__main__":
     test_set = dataset['test']
     # -----------------------------------------
 
-    if sweep_all_brackets:
-        for brackets in bracket_pairs:
-            print(f"\n--- Starting Evaluation with brackets: {brackets} ---")
+    formats_to_try = cot_formats if sweep_all_formats else [default_cot_format]
+    brackets_to_try = bracket_pairs if sweep_all_brackets else [cot_brackets]
+
+    for fmt in formats_to_try:
+        for brackets in brackets_to_try:
+            print(f"\n--- Starting Evaluation | Format: {fmt} | Brackets: {brackets} ---")
             accu_list = []
             for i in range(training_args.inf_num_iterations):
-                accu = evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=brackets)
+                accu = evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=brackets, cot_format=fmt)
                 accu_list.append(accu)
-            print(f"Average accuracy for brackets {brackets}: {sum(accu_list) / len(accu_list)}")
-    else:
-        accu_list = []
-        for i in range(training_args.inf_num_iterations):
-            accu = evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=cot_brackets)
-            accu_list.append(accu)
-        print(f"Average accuracy over {training_args.inf_num_iterations} sampling: {sum(accu_list) / len(accu_list)}")
+            print(f"Average accuracy (fmt: {fmt}, brackets: {brackets}): {sum(accu_list) / len(accu_list)}")
