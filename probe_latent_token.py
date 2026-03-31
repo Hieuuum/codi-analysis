@@ -48,9 +48,34 @@ log_wrong = False       # include incorrectly predicted examples in the output f
 sweep_all_brackets = True # Set to True to iterate over all bracket_pairs below for parameter sweeping
 cot_brackets = ('{{', '}}')  # Standard setting: [0] replaces '<<' and [1] replaces '>>' in raw CoT
 bracket_pairs = [
-    ('{{', '}}'),
-    ('[[', ']]'),
-    ('', '') 
+    ('{{{', '}}}'),
+    ('[[[', ']]]'),
+    ('<<<', '>>>'),
+    ('(((', ')))'),
+    ('!!!', '!!!'),
+    ('@@@', '@@@'),
+    ('###', '###'),
+    ('$$$', '$$$'),
+    ('%%%', '%%%'),
+    ('^^^', '^^^'),
+    ('&&&', '&&&'),
+    ('***', '***'),
+    ('---', '---'),
+    ('___', '___'),
+    ('===', '==='),
+    ('+++', '+++'),
+    ('\\\\\\', '\\\\\\'),
+    ('|||', '|||'),
+    (';;;', ';;;'),
+    (':::', ':::'),
+    ("'''", "'''"),
+    ('"""', '"""'),
+    (',,,', ',,,'),
+    ('...', '...'),
+    ('///', '///'),
+    ('???', '???'),
+    ('~~~', '~~~'),
+    ('```', '```'),
 ]
 
 probe_topk = 20         # number of top tokens to decode at each latent probe step
@@ -123,6 +148,7 @@ def prepare_dataset(
     model: CODI,
     tokenizer: transformers.PreTrainedTokenizer,
     current_brackets: tuple,
+    test_set,
 ) -> tuple:
     """Download and format the dataset, tokenize into batches ready for inference.
 
@@ -130,13 +156,7 @@ def prepare_dataset(
         (question_data, questions, answers, procedures)
         question_data: list of tokenized batches on cuda, each with input_ids / attention_mask / input_len.
     """
-    logging.warning("Downloading Data")
-    if "zen-E/GSM8k-Aug" not in data_args.data_name:
-        raise NotImplementedError
-    dataset = load_dataset(data_args.data_name)
-    test_set = dataset['test']
-
-    logging.warning("Formatting inputs...")
+    logging.info("Formatting inputs...")
     questions, answers, procedures = [], [], []
     for example in test_set:
         raw_q = example["question"].strip().replace('  ', ' ')
@@ -153,9 +173,9 @@ def prepare_dataset(
         answers.append(float(example["answer"].replace(",", "")))
         procedures.append(raw_cot)
 
-    logging.warning("Tokenizing inputs...")
+    logging.info("Tokenizing inputs...")
     eval_step = math.ceil(len(questions) / data_args.batch_size)
-    logging.warning(
+    logging.info(
         f"Total example: {len(questions)} | eval batch size: {data_args.batch_size} | "
         f"eval steps: {eval_step}"
     )
@@ -422,18 +442,13 @@ def format_batch_logs(
     return ans_preds, log_lines, decoded_topk_flat
 
 
-def evaluation(model_args, data_args, training_args, current_brackets=None):
-    """Orchestrate CODI evaluation: load model, prepare data, run inference, log results."""
-    if not model_args.lora_init:
-        raise NotImplementedError
-    
+def evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=None):
+    """Orchestrate CODI evaluation: prepare data, run inference, log results."""
     if current_brackets is None:
         current_brackets = cot_brackets
 
-    lora_config = _build_lora_config(model_args)
-    model, tokenizer = load_model_and_tokenizer(model_args, training_args, lora_config)
     question_data, questions, answers, procedures = prepare_dataset(
-        data_args, training_args, model, tokenizer, current_brackets
+        data_args, training_args, model, tokenizer, current_brackets, test_set
     )
 
     model.eval()
@@ -492,8 +507,8 @@ def evaluation(model_args, data_args, training_args, current_brackets=None):
     with open(filename, "w", encoding="utf-8") as f:
         f.write("\n".join(log))
 
-    print(f"adapter: {model_args.adapter_name_or_path} | GSM8K test accuracy: {100 * accuracy:.2f}% | ")
-    print(f"average length of COT: {sum(len_cot) / len(len_cot)}")
+    print(f"Adapter: {model_args.adapter_name_or_path} | GSM8K test accuracy: {100 * accuracy:.2f}% | ")
+    print(f"Average length of COT: {sum(len_cot) / len(len_cot)}")
     return 100 * accuracy
 
 
@@ -523,17 +538,32 @@ if __name__ == "__main__":
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    # --- Initialize model and dataset ONCE ---
+    if not model_args.lora_init:
+        raise NotImplementedError("LoRA initialization is required.")
+        
+    logging.info("Building model and loading tokenizers...")
+    lora_config = _build_lora_config(model_args)
+    model, tokenizer = load_model_and_tokenizer(model_args, training_args, lora_config)
+
+    logging.info("Downloading Data...")
+    if "zen-E/GSM8k-Aug" not in data_args.data_name:
+        raise NotImplementedError("Only zen-E/GSM8k-Aug dataset is supported for this configuration.")
+    dataset = load_dataset(data_args.data_name)
+    test_set = dataset['test']
+    # -----------------------------------------
+
     if sweep_all_brackets:
         for brackets in bracket_pairs:
             print(f"\n--- Starting Evaluation with brackets: {brackets} ---")
             accu_list = []
             for i in range(training_args.inf_num_iterations):
-                accu = evaluation(model_args, data_args, training_args, current_brackets=brackets)
+                accu = evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=brackets)
                 accu_list.append(accu)
             print(f"Average accuracy for brackets {brackets}: {sum(accu_list) / len(accu_list)}")
     else:
         accu_list = []
         for i in range(training_args.inf_num_iterations):
-            accu = evaluation(model_args, data_args, training_args, current_brackets=cot_brackets)
+            accu = evaluation(model_args, data_args, training_args, model, tokenizer, test_set, current_brackets=cot_brackets)
             accu_list.append(accu)
         print(f"Average accuracy over {training_args.inf_num_iterations} sampling: {sum(accu_list) / len(accu_list)}")
