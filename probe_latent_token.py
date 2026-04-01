@@ -49,6 +49,7 @@ sweep_all_brackets = True # Set to True to iterate over all bracket_pairs below 
 cot_brackets = ('{{', '}}')  # Standard setting: [0] replaces '<<' and [1] replaces '>>' in raw CoT
 bracket_pairs = [
     ('<<', '>>'),
+    ('', ''),
     ('"""', '"""'),
     ('[', ']'),
     ('[[', ']]'),
@@ -60,13 +61,14 @@ bracket_pairs = [
     ('///', '///'),
 ]
 
-sweep_all_formats = False # Set to True to iterate over all formats below
+sweep_all_formats = True # Set to True to iterate over all formats below
 cot_formats = [
     "baseline",            # 2. Equations style (current baseline): <<16-3-4=9>> <<9*2=18>>
     "cot_prefix",          # 1. COT: prefix (no brackets, comma separated): COT: 16-3-4=9, 9*2=18
     "newline",             # 3. Newline for each CoT step: \n<<16-3-4=9>>\n<<9*2=18>>
     "cot_prefix_brackets", # 4. COT: with brackets: COT: <<16-3-4=9>> <<9*2=18>>
     "newline_cot_prefix",  # 5. Newline + COT: prefix: \nCOT:\n<<16-3-4=9>>\n<<9*2=18>>
+    "newline_cot_prefix_inline", # 6. \n COT: eqns with brackets: \nCOT: <<16-3-4=9>> <<9*2=18>>
 ]
 default_cot_format = "baseline" # Default format to use if sweep_all_formats is False
 
@@ -177,6 +179,9 @@ def prepare_dataset(
             elif cot_format == "newline_cot_prefix":
                 s = "\n".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
                 final_question = f"{raw_q}\nCOT:\n{s}"
+            elif cot_format == "newline_cot_prefix_inline":
+                s = " ".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
+                final_question = f"{raw_q}\nCOT: {s}"
             else:
                 s = " ".join(first_n_minus_1_raw).replace('<<', current_brackets[0]).replace('>>', current_brackets[1])
                 final_question = f"{raw_q} {s}"
@@ -573,8 +578,8 @@ if __name__ == "__main__":
     formats_to_try = cot_formats if sweep_all_formats else [default_cot_format]
     brackets_to_try = bracket_pairs if sweep_all_brackets else [cot_brackets]
 
-    for fmt in formats_to_try:
-        for brackets in brackets_to_try:
+    for brackets in brackets_to_try:
+        for fmt in formats_to_try:
             print(f"\n--- Starting Evaluation | Format: {fmt} | Brackets: {brackets} ---")
             accu_list = []
             for i in range(training_args.inf_num_iterations):
