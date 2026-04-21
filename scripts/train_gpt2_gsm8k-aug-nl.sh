@@ -13,8 +13,8 @@ python train.py \
 	--data_name icot-full \
 	--seed 11 \
 	--model_max_length 512 \
-	--per_device_train_batch_size 64 \
-  	--gradient_accumulation_steps 2 \
+	--per_device_train_batch_size 16 \
+  	--gradient_accumulation_steps 8 \
 	--bf16 \
 	--num_train_epochs 40 \
 	--learning_rate 3e-3 \
