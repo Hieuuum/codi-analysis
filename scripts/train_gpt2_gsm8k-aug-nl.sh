@@ -8,7 +8,7 @@ python train.py \
 	--output_dir "$SAVE_DIR" \
   	--expt_name gsm8k_llama1b_latent_baseline \
 	--logging_dir "$SAVE_DIR/logs"\
-	--logging_steps 10 \
+	--logging_steps 1000 \
 	--model_name_or_path gpt2 \
 	--data_name icot-full \
 	--seed 11 \
@@ -39,6 +39,7 @@ python train.py \
 	--exp_data_num 2000 \
 	--remove_eos True \
 	--print_ref_model_stats False \
+	--print_loss False \
 	--dataloader_num_workers 4 \
 	--dataloader_pin_memory True \
 	--dataloader_persistent_workers True \

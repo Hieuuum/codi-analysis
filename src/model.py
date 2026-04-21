@@ -400,12 +400,12 @@ class CODI(torch.nn.Module):
 
         loss = ce_loss_total + distill_loss_total + ref_ce_loss
         
-        if ce_loss_total != 0:
-            ce_loss_total = ce_loss_total.detach().item()
-        if distill_loss_total != 0:
-            distill_loss_total = distill_loss_total.detach().item()
-        if ref_ce_loss != 0:
-            ref_ce_loss = ref_ce_loss.detach().item()
+        if isinstance(ce_loss_total, torch.Tensor):
+            ce_loss_total = ce_loss_total.detach()
+        if isinstance(distill_loss_total, torch.Tensor):
+            distill_loss_total = distill_loss_total.detach()
+        if isinstance(ref_ce_loss, torch.Tensor):
+            ref_ce_loss = ref_ce_loss.detach()
 
         return {"loss": loss, "logits": logits, "ce_loss": ce_loss_total, "distill_loss": distill_loss_total, "ref_ce_loss": ref_ce_loss}
 

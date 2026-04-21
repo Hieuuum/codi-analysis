@@ -53,7 +53,9 @@ class CustomTrainer(Trainer):
         loss = outputs["loss"]
         #"ce_loss": ce_loss_total, "mse_loss": mse_loss_total, "ref_ce_loss": ref_ce_loss
         if step % self.args.logging_steps == 0:
-            self.log({"loss": loss.item(), "ce_loss": outputs["ce_loss"], "distill_loss": outputs["distill_loss"], "ref_ce_loss": outputs["ref_ce_loss"],})
+            def _scalar(x):
+                return x.item() if isinstance(x, torch.Tensor) else x
+            self.log({"loss": loss.item(), "ce_loss": _scalar(outputs["ce_loss"]), "distill_loss": _scalar(outputs["distill_loss"]), "ref_ce_loss": _scalar(outputs["ref_ce_loss"]),})
         return loss
 
     def log(self, logs, start_time=None):
