@@ -61,6 +61,7 @@ bracket_pairs = [
     ('///', '///'),
 ]
 
+include_cot_hint = True # If False, feed only the raw question (no partial CoT injected) — ignores cot_format/brackets
 sweep_all_formats = True # Set to True to iterate over all formats below
 cot_formats = [
     "baseline",            # 2. Equations style (current baseline): <<16-3-4=9>> <<9*2=18>>
@@ -161,7 +162,9 @@ def prepare_dataset(
 
         # Split the space-separated math annotators, e.g. '<<16-3-4=9>> <<9*2=18>>'
         thoughts = raw_cot.strip().split()
-        if len(thoughts) > 1:
+        if not include_cot_hint:
+            final_question = raw_q
+        elif len(thoughts) > 1:
             first_n_minus_1_raw = thoughts[:-1]
             
             if cot_format == "baseline":
@@ -515,8 +518,9 @@ def evaluation(model_args, data_args, training_args, model, tokenizer, test_set,
         f"Total questions: {len(answers)}\n"
         f"Total correct: {len(correct_indices)}\n"
         f"Accuracy: {accuracy * 100:.2f}%\n"        
-        f"CoT brackets used: {bracket_str}\n"        
+        f"CoT brackets used: {bracket_str}\n"
         f"CoT format: {cot_format}\n"
+        f"CoT hint injected: {include_cot_hint}\n"
         f"Correct indices: {correct_indices}\n"
         f"=====================\n\n"
     )

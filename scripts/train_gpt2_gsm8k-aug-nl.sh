@@ -1,4 +1,4 @@
-SAVE_DIR=/scratch/prj/inf_multimodal_qa/scratch_tmp/efficient_cot/icae/codi2/gpt_codi_lora_nl
+SAVE_DIR=models/gpt2_gsm8k_aug_nl
 
 mkdir -p "$SAVE_DIR"
 
