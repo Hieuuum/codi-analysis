@@ -53,9 +53,7 @@ class CustomTrainer(Trainer):
         loss = outputs["loss"]
         #"ce_loss": ce_loss_total, "mse_loss": mse_loss_total, "ref_ce_loss": ref_ce_loss
         if step % self.args.logging_steps == 0:
-            def _scalar(x):
-                return x.item() if isinstance(x, torch.Tensor) else x
-            self.log({"loss": loss.item(), "ce_loss": _scalar(outputs["ce_loss"]), "distill_loss": _scalar(outputs["distill_loss"]), "ref_ce_loss": _scalar(outputs["ref_ce_loss"]),})
+            self.log({"loss": loss.item(), "ce_loss": outputs["ce_loss"], "distill_loss": outputs["distill_loss"], "ref_ce_loss": outputs["ref_ce_loss"],})
         return loss
 
     def log(self, logs, start_time=None):
@@ -65,16 +63,21 @@ class CustomTrainer(Trainer):
 
 def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
     """Tokenize a list of strings."""
-    encoded = tokenizer(
-        list(strings),
-        padding=False,
-        max_length=256,
-        truncation=True,
-        return_attention_mask=False,
-    )
-    input_ids = [torch.tensor(ids, dtype=torch.long) for ids in encoded["input_ids"]]
-    labels = input_ids
-    input_ids_lens = labels_lens = [len(ids) for ids in input_ids]
+    tokenized_list = [
+        tokenizer(
+            text,
+            return_tensors="pt",
+            padding="longest",
+            max_length=256,#training_args.model_max_length,
+            truncation=True,
+            return_attention_mask=False
+        )
+        for text in strings
+    ]
+    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
+    input_ids_lens = labels_lens = [
+        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
+    ]
     return dict(
         input_ids=input_ids,
         labels=labels,
@@ -142,7 +145,7 @@ def train():
             cache_dir=training_args.cache_dir,
             model_max_length=training_args.model_max_length,
             padding_side="right",
-            use_fast=True,
+            use_fast=False,
         )
 
     if tokenizer.pad_token_id is None:

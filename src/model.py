@@ -115,8 +115,6 @@ class TrainingArguments(transformers.TrainingArguments):
     log_full: bool = field(default=False, metadata={"help": "Log all losses."})
     print_loss: bool = field(default=True)
     max_token_num: int = field(default=1000, metadata={"help": "Limit the longest data to avoid OOM."})
-    use_logit_lens: bool = field(default=False, metadata={"help": "Apply logit lens to inspect hidden states at different layers."})
-    logit_lens_example_idx: int = field(default=0, metadata={"help": "Which example index to show logit lens for (0-indexed)."})
 
 def print_trainable_parameters(model):
     trainable_parameters = 0
@@ -182,14 +180,11 @@ class CODI(torch.nn.Module):
 
         self.dim = self.codi.config.hidden_size
         self.num_latent = training_args.num_latent
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
 
         # LoRA
         if training_args.use_lora:
             self.codi = get_peft_model(self.codi, lora_config)
-
-        # Cache embedding layer lookup (avoid string-match + try/except on every forward)
-        self.embed_fn = self.get_embd(self.codi, self.model_name)
 
         # Projection Layer
         self.use_prj = training_args.use_prj
@@ -285,7 +280,7 @@ class CODI(torch.nn.Module):
         past_key_values = None
         outputs = self.codi(input_ids=encoder_input_ids, use_cache=True, output_hidden_states=True, past_key_values=past_key_values, attention_mask=encoder_attention_mask)
         past_key_values = outputs.past_key_values
-        latent_embd = outputs.hidden_states[-1][:, -1, :].unsqueeze(1) # as the next input 
+        latent_embd = outputs.hidden_states[-1][:, -1, :].unsqueeze(1) # as the next input
         if self.use_prj:
             latent_embd = self.prj(latent_embd)
 
@@ -298,11 +293,12 @@ class CODI(torch.nn.Module):
         distill_loss_total = 0
         ce_loss_total = 0
 
-        ref_outputs_with_grad = self.codi(input_ids=ref_input_ids, output_hidden_states=True, attention_mask=ref_attention_mask, use_cache=False)
-        ref_outputs = ref_outputs_with_grad
-
+        with torch.no_grad():
+            ref_outputs = self.codi(input_ids=ref_input_ids, output_hidden_states=True, attention_mask=ref_attention_mask)
+        ref_outputs_with_grad = self.codi(input_ids=ref_input_ids, output_hidden_states=True, attention_mask=ref_attention_mask) 
+        
         # Formatting for deprecated exps
-        ref_outputs_list = [ref_outputs]
+        ref_outputs_list = [ref_outputs] 
         ref_input_ids = [ref_input_ids] 
 
         # Process the position tensor
@@ -344,7 +340,7 @@ class CODI(torch.nn.Module):
                 # Calculate the distillation loss
                 if i == num_latent - 1: # the last latent embedding
                     # Decode the final answer in natural language
-                    embds = self.embed_fn(decoder_input_ids)
+                    embds = self.get_embd(self.codi, self.model_name)(decoder_input_ids)
                   
                     if dynamic_mask is not None: # Prevent attending the paddings
                         decoder_mask = torch.ones((embds.size(0), embds.size(1)), dtype=torch.bool).to(dynamic_mask)
@@ -356,14 +352,10 @@ class CODI(torch.nn.Module):
                     ref_outputs = ref_outputs_list[0]
                     
                     distill_loss = 0
-                    # Pre-compute position index expansion (same across all layers)
-                    hidden_dim = outputs.hidden_states[0].size(-1)
-                    ref_pos_idx = ref_answer_position.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, hidden_dim)
-                    mod_pos_idx = model_answer_position.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, hidden_dim)
                     # Calculate distillation loss between the teacher's logits and the student's logits for every layer
                     for j, (out, ref_out) in enumerate(zip(outputs.hidden_states, ref_outputs.hidden_states)):
-                        ref_selected = ref_out.gather(1, ref_pos_idx)
-                        out_selected = out.gather(1, mod_pos_idx)
+                        ref_selected = ref_out.gather(1, ref_answer_position.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, ref_out.size(-1)))
+                        out_selected = out.gather(1, model_answer_position.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, out.size(-1)))
 
                         distill_loss_tmp = self.distill_loss_fct(out_selected, ref_selected.detach())
                         
@@ -407,12 +399,11 @@ class CODI(torch.nn.Module):
 
         loss = ce_loss_total + distill_loss_total + ref_ce_loss
         
-        if isinstance(ce_loss_total, torch.Tensor):
-            ce_loss_total = ce_loss_total.detach()
-        if isinstance(distill_loss_total, torch.Tensor):
-            distill_loss_total = distill_loss_total.detach()
-        if isinstance(ref_ce_loss, torch.Tensor):
-            ref_ce_loss = ref_ce_loss.detach()
+        if ce_loss_total != 0:
+            ce_loss_total = ce_loss_total.detach().item()
+        if distill_loss_total != 0:
+            distill_loss_total = distill_loss_total.detach().item()
+        if ref_ce_loss != 0:
+            ref_ce_loss = ref_ce_loss.detach().item()
 
         return {"loss": loss, "logits": logits, "ce_loss": ce_loss_total, "distill_loss": distill_loss_total, "ref_ce_loss": ref_ce_loss}
-

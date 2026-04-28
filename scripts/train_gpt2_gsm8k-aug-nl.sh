@@ -1,4 +1,4 @@
-SAVE_DIR=models/gpt2_gsm8k_aug_nl
+SAVE_DIR=/scratch/prj/inf_multimodal_qa/scratch_tmp/efficient_cot/icae/codi2/gpt_codi_lora_nl
 
 mkdir -p "$SAVE_DIR"
 
@@ -8,13 +8,13 @@ python train.py \
 	--output_dir "$SAVE_DIR" \
   	--expt_name gsm8k_llama1b_latent_baseline \
 	--logging_dir "$SAVE_DIR/logs"\
-	--logging_steps 1000 \
+	--logging_steps 10 \
 	--model_name_or_path gpt2 \
 	--data_name icot-full \
 	--seed 11 \
 	--model_max_length 512 \
-	--per_device_train_batch_size 32 \
-  	--gradient_accumulation_steps 4 \
+	--per_device_train_batch_size 64 \
+  	--gradient_accumulation_steps 2 \
 	--bf16 \
 	--num_train_epochs 40 \
 	--learning_rate 3e-3 \
@@ -38,9 +38,4 @@ python train.py \
 	--exp_mode False \
 	--exp_data_num 2000 \
 	--remove_eos True \
-	--print_ref_model_stats False \
-	--print_loss False \
-	--dataloader_num_workers 4 \
-	--dataloader_pin_memory True \
-	--dataloader_persistent_workers True \
-	--optim adamw_torch_fused \
+	--print_ref_model_stats True \
